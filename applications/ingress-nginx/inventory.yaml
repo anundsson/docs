@@ -1,0 +1,12 @@
+ingress-nginx:
+  charts:
+  - chartName: ingress-nginx
+    chartRepository: http://kubernetes.github.io/ingress-nginx
+    chartVersion: 4.9.1
+  images:
+  - imageName: ingress-nginx/controller
+    imageRegistry: registry.k8s.io
+    imageTag: v1.9.6
+  - imageName: ingress-nginx/kube-webhook-certgen
+    imageRegistry: registry.k8s.io
+    imageTag: v20231226-1a7112e06

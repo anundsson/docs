@@ -1,0 +1,125 @@
+parameters:
+  - name: publishArtifact
+    type: boolean
+    default: false
+  - name: serviceConnection
+    displayName: 'Service Connection'
+    type: string
+    default: 'anundssontest'
+  - name: application
+    type: string
+  - name: rootFolder
+    type: string
+  - name: acrName
+    type: string
+  - name: doMendScan
+    type: boolean
+    default: false
+
+jobs:
+  - job: combineJSON
+    displayName: 'Capture Applications and Set Combined JSON'
+    steps:
+    - script: |
+        set -x
+        json=$(bash ./.azuredevops/scripts/combine_json.sh '${{ parameters.rootFolder }}' '${{ parameters.application }}' 'images')
+        echo "##vso[task.setvariable variable=json;isOutput=true]$json"
+      name: captureOutput
+      displayName: 'Combine JSON'
+
+  - job: ImagePullAndScan
+    strategy:
+      matrix: $[ dependencies.combineJSON.outputs['captureOutput.json'] ]
+    dependsOn: combineJSON
+    pool:
+      vmImage: ubuntu-latest
+    # variables:
+    #   - name: WssConfigurationFilePath
+    #     value: wss-docker.config
+    #   - group: SHB-WhiteSource
+    steps:
+      - checkout: none
+      - bash: |
+          docker pull $(imageRegistry)/$(imageName):$(imageTag)
+        displayName: 'Pull Docker Image $(imageName)'
+      #- ${{ id eq(parameters.doMendScan, true) }}:
+      # - template: ./mend.yaml
+      #   parameters:
+      #     imageRegistry: $(imageRegistry)
+      #     imageName: $(imageName)
+      #     imageTag: $(imageTag)
+      - bash: |
+          set -x
+          imageTarName=$(echo $(imageName) | sed -e "s|/|_|g")_$(imageTag)
+          docker save -o $(Build.ArtifactStagingDirectory)/$imageTarName.tar $(imageRegistry)/$(imageName):$(imageTag)
+          echo "##vso[task.setvariable variable=imageTarName;isOutput=true]$imageTarName"
+        displayName: 'Save Docker Image Tarball $(imageName)'
+        name: dockerSave
+        condition: ${{ parameters.publishArtifact }}
+      - publish: $(Build.ArtifactStagingDirectory)
+        artifact: $(dockerSave.imageTarName)
+        displayName: 'Publish Docker Image Artifact $(imageName)'
+        condition: ${{ parameters.publishArtifact }}
+
+  - job: ImagePushToACR
+    strategy:
+      matrix: $[ dependencies.combineJSON.outputs['captureOutput.json'] ]
+    dependsOn: [ImagePullAndScan, combineJSON]
+    pool:
+      name: $(poolName)
+    condition: and(succeeded(), eq('${{ parameters.publishArtifact }}', true))    
+    steps:
+      - checkout: none
+      - bash: |
+          set -x
+          imageTarName=$(echo $(imageName) | sed -e "s|/|_|g")_$(imageTag)
+          echo "##vso[task.setvariable variable=imageTarName;isOutput=true]$imageTarName"
+        name: formatStep
+        displayName: 'Format Artifact Name'
+      - download: current
+        artifact: $(formatStep.imageTarName)
+        displayName: 'Download pipeline artifact'
+      - bash: |
+          set -x
+          acrLoginServer=${{ parameters.acrName }}.azurecr.io
+          podman load --quiet --input $(Pipeline.Workspace)/$(formatStep.imageTarName)/$(formatStep.imageTarName).tar
+          if [ $(imageRegistry) = "docker.io" ]; then
+            imageToTag=$(imageName)
+          else
+            imageToTag=$(imageRegistry)/$(imageName)
+          fi
+          podman tag $imageToTag:$(imageTag) $acrLoginServer/$(imageName):$(imageTag)
+          podman image ls
+        displayName: 'Podman load and tag'
+      - task: AzureCLI@2
+        displayName: 'Podman push'
+        inputs:
+          azureSubscription: ${{ parameters.serviceConnection }}
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            acrLoginServer=${{ parameters.acrName }}.azurecr.io
+            token=$(az acr login --name $acrLoginServer --expose-token --output tsv --query accessToken)
+            podman login $acrLoginServer --username 00000000-0000-0000-0000-000000000000 --password-stdin <<< $token
+            podman push $acrLoginServer/$(imageName):$(imageTag)
+        
+  - job: DeleteImageFromAgent
+    strategy:
+      matrix: $[ dependencies.combineJSON.outputs['captureOutput.json'] ]
+    dependsOn: [combineJSON, ImagePushToACR]
+    pool:
+      name: $(poolName)
+    steps:
+      - checkout: none
+      - bash: |
+          acrLoginServer=${{ parameters.acrName }}.azurecr.io
+          if [ $(imageRegistry) = "docker.io" ]; then
+            imageToDelete=$(imageName):$(imageTag)
+          else
+            imageToDelete=$(imageRegistry)/$(imageName):$(imageTag)
+          fi
+          podman image ls
+          podman image rm $imageToDelete
+          podman image rm $acrLoginServer/$(imageName):$(imageTag)
+          podman image ls
+        displayName: 'Delete images from agent'

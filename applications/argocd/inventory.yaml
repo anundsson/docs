@@ -1,0 +1,9 @@
+argocd:
+  charts:
+  - chartName: argo-cd
+    chartRepository: https://argoproj.github.io/argo-helm
+    chartVersion: 6.7.6
+  images:
+  - imageName: 'argoproj/argocd'
+    imageRegistry: quay.io
+    imageTag: v2.10.5

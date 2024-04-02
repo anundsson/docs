@@ -1,0 +1,6 @@
+nginx:
+  charts:
+  images:
+  - imageName: nginx
+    imageRegistry: docker.io
+    imageTag: latest

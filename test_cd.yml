@@ -1,0 +1,90 @@
+trigger:
+  branches:
+    exclude:
+      - '*'
+pr: none
+
+parameters:
+  - name: location
+    displayName: 'Location'
+    type: string
+    default: 'swedencentral'
+    values:
+      - 'swedencentral'
+  - name: serviceConnection
+    displayName: 'Service Connection'
+    type: string
+    default: 'anundssontest'
+    values:
+      - anundssontest
+  - name: publishArtifact
+    type: boolean
+    default: true
+  - name: BootstrapCluster
+    type: boolean
+    default: true
+
+pool:
+  name: $(poolName)
+
+variables:
+  - name: templateFile
+    value: './main.bicep'
+  - name: parameterFile
+    value: './main-params.bicepparam'
+  - name: poolName
+    value: 'Selfhost'
+  - group: myVariableGroup
+  - name: rootFolder
+    value: './gitops/applications'
+  - name: application
+    value: '*'
+  - name: acrName
+    value: 'andretestdbare'
+
+stages:  
+# - stage: testLoginACR
+#   displayName: 'testLoginACR'
+#   jobs:
+#   - job: testLoginACR
+#     displayName: testLoginACR
+#     pool:
+#       name: $(poolName)
+#       steps:
+#         - task: AzureCLI@2
+#           displayName: 'testLoginACR'
+#           inputs:
+#             azureSubscription: ${{ parameters.serviceConnection }}
+#             scriptType: 'bash'
+#             scriptLocation: 'inlineScript'
+#             inlineScript: |
+#               az acr login --name $(acrName)
+
+
+  - stage: ImageOperations
+    displayName: 'Image Operations'
+    jobs:
+      - template: './templates/image_operations.yml'
+        parameters:
+          publishArtifact: ${{ parameters.publishArtifact }}
+          rootFolder: $(rootFolder)
+          application: $(application)
+          acrName: $(acrName)
+
+  - stage: ChartOperations
+    displayName: 'Chart Operations'
+    jobs:
+      - template: './templates/chart_operation.yml'
+        parameters:
+          publishArtifact: ${{ parameters.publishArtifact }}
+          rootFolder: $(rootFolder)
+          application: $(application)
+          acrName: $(acrName)
+
+  # - stage: BootstrapAKS
+  #   displayName: 'Bootstrap Cluster'
+  #   dependsOn: [ImageOperations, ChartOperations]
+  #   condition: eq('${{ parameters.bootstrapCluster }}', true)
+  #   variables:
+  #     aksName: $[ stageDependencies.DeployIaC.IaC.outputs['IaCDeployOutput.aksName'] ]
+  #     resourceGroup: $[ stageDependencies.DeployIaC.IaC.outputs['IaCDeployOutput.resourceGroup'] ]
