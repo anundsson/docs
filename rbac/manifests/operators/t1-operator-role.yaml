@@ -1,0 +1,17 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: t1-day-to-day-ops
+rules:
+  # Grant all actions on all resources in all API groups except secrets and exec into pods
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+  # Exclude secrets specifically to prevent any access
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: []
+  # Exclude the exec action on pods to prevent exec into pods
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: []

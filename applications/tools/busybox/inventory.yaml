@@ -1,0 +1,6 @@
+busybox:
+  charts:
+  images:
+  - imageName: busybox
+    imageRegistry: docker.io
+    imageTag: latest
