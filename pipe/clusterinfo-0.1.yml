@@ -1,0 +1,50 @@
+parameters:
+  - name: filePath
+    type: string
+    default: 'folder/clusterInfo.yaml'
+  - name: bicepFile
+    type: string
+    default: 'folder/bicepparam.bicep'
+
+jobs:
+- job: CheckClusterInfo
+  displayName: Check for ClusterInfo.yaml
+  pool:
+    vmImage: 'ubuntu-latest'
+  steps:
+  - script: |
+      if [ -f "${{ parameters.filePath }}" ]; then
+          echo "##vso[task.setvariable variable=clusterInfoExists;isOutput=true]true"
+      else
+          echo "##vso[task.setvariable variable=clusterInfoExists;isOutput=true]false"
+      fi
+    displayName: Check if ClusterInfo.yaml Exists
+    name: checkClusterInfo
+
+- job: ParseClusterInfo
+  displayName: Parse Parameters from ClusterInfo.yaml
+  dependsOn: CheckClusterInfo
+  condition: eq(dependencies.CheckClusterInfo.outputs['checkClusterInfo.clusterInfoExists'], 'true')
+  pool:
+    vmImage: 'ubuntu-latest'
+  steps:
+  - script: |
+      resourceGroup=$(yq e '.resourceGroup' ${{ parameters.filePath }})
+      clusterName=$(yq e '.clusterName' ${{ parameters.filePath }})
+
+      echo "##vso[task.setvariable variable=parsedResourceGroup]$resourceGroup"
+      echo "##vso[task.setvariable variable=parsedClusterName]$clusterName"
+    displayName: Extract Parameters from ClusterInfo.yaml
+  name: parseClusterInfo
+
+- job: StopIfNoClusterInfo
+  displayName: Stop Pipeline if No ClusterInfo.yaml
+  dependsOn: CheckClusterInfo
+  condition: and(eq(dependencies.CheckClusterInfo.outputs['checkClusterInfo.clusterInfoExists'], 'false'), eq('${{ parameters.initialDeployment }}', 'false'))
+  pool:
+    vmImage: 'ubuntu-latest'
+  steps:
+  - script: |
+      echo "No ClusterInfo.yaml found. Stopping pipeline."
+    displayName: No ClusterInfo.yaml Found
+  name: stopPipeline

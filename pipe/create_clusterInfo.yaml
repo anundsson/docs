@@ -1,0 +1,88 @@
+trigger:
+- main # Adjust as per your branch name
+
+pr:
+- main # Adjust as per your branch name
+
+parameters:
+  - name: resourceGroup
+    displayName: "Resource Group"
+    type: string
+  
+  - name: clusterName
+    displayName: "AKS Cluster Name"
+    type: string
+  
+  - name: outputFile
+    displayName: "Output File Name"
+    type: string
+  
+  - name: targetRepo
+    displayName: "Target Repository (Org/Repo)"
+    type: string
+
+  - name: serviceConnection
+    displayName: "Azure Service Connection"
+    type: string
+
+  - name: agentPool
+    displayName: "Agent Pool Name"
+    type: string
+
+jobs:
+- job: PullAKSData
+  displayName: Pull AKS Cluster Data
+  pool:
+    name: ${{ parameters.agentPool }}
+  steps:
+  - task: AzureCLI@2
+    displayName: Fetch Cluster Info
+    inputs:
+      azureSubscription: ${{ parameters.serviceConnection }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        az aks show -g ${{ parameters.resourceGroup }} -n ${{ parameters.clusterName }} --query '{clusterName: name, location: location, nodeResourceGroup: nodeResourceGroup, kubernetesVersion: kubernetesVersion}' -o yaml > ${{ parameters.outputFile }}
+        echo "Cluster info saved to ${{ parameters.outputFile }}"
+      failOnStandardError: true
+
+  - task: PublishBuildArtifacts@1
+    displayName: Publish Cluster Data Artifact
+    inputs:
+      PathtoPublish: ${{ parameters.outputFile }}
+      ArtifactName: aks-data
+
+- job: CreatePullRequest
+  displayName: Create Pull Request
+  dependsOn: PullAKSData
+  pool:
+    name: ${{ parameters.agentPool }}
+  steps:
+  - download: current
+    artifact: aks-data
+
+  - script: |
+      git clone https://$(System.AccessToken)@dev.azure.com/${{ parameters.targetRepo }}.git repo
+      cd repo
+      cp ../${{ parameters.outputFile }} .
+      git checkout -b aks-cluster-info-update
+      git add ${{ parameters.outputFile }}
+      git commit -m "Update clusterInfo.yaml with AKS data"
+      git push origin aks-cluster-info-update
+    displayName: Commit Changes to New Branch
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+  - task: AzureCLI@2
+    displayName: Create Pull Request
+    inputs:
+      azureSubscription: ${{ parameters.serviceConnection }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        az repos pr create \
+          --repository ${{ parameters.targetRepo }} \
+          --source-branch aks-cluster-info-update \
+          --target-branch main \
+          --title "Update AKS Cluster Info" \
+          --description "This PR updates clusterInfo.yaml with the latest AKS data."

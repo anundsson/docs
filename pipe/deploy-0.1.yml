@@ -1,0 +1,91 @@
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - '**/*.bicepparam.bicep'
+
+pr:
+  branches:
+    include:
+      - main
+
+parameters:
+  - name: serviceConnection1
+    displayName: "Service Connection 1"
+    type: string
+
+  - name: serviceConnection2
+    displayName: "Service Connection 2"
+    type: string
+
+  - name: resourceGroup
+    displayName: "Resource Group"
+    type: string
+    default: ""
+
+  - name: clusterName
+    displayName: "Cluster Name"
+    type: string
+    default: ""
+
+  - name: initialDeployment
+    displayName: "Force Initial Deployment"
+    type: boolean
+    default: false
+
+jobs:
+- job: DetectChangedFolder
+  displayName: "Detect Changed Folder"
+  pool:
+    vmImage: 'ubuntu-latest'
+  steps:
+  - script: |
+      # Get the folder path from the changed file
+      folderPath=$(echo $(Build.SourceDirectory) | sed 's|\\|/|g')
+      echo "Detected folder path: $folderPath"
+
+      # Set the folderPath variable for use in subsequent jobs
+      echo "##vso[task.setvariable variable=folderPath]$folderPath"
+    displayName: "Detect Folder Path"
+  name: detectFolder
+
+- template: templates/parse-clusterinfo.yml
+  parameters:
+    filePath: "$(folderPath)/clusterInfo.yaml"
+    bicepFile: "$(folderPath)/bicepparam.bicep"
+  name: parseClusterInfo
+
+- job: Deploy_IaC
+  displayName: Deploy Infrastructure as Code
+  dependsOn: detectFolder
+  condition: or(eq(dependencies.detectFolder.outputs['detectFolder.folderPath'], ''), eq('${{ parameters.initialDeployment }}', 'true'))
+  pool:
+    vmImage: 'ubuntu-latest'
+  steps:
+  - task: AzureCLI@2
+    displayName: Deploy IaC
+    inputs:
+      azureSubscription: ${{ parameters.serviceConnection1 }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        # Deploy the infrastructure using the specified Bicep parameters
+        az deployment group create \
+          --resource-group ${{ parameters.resourceGroup }} \
+          --template-file $(folderPath)/main.bicep \
+          --parameters @$(folderPath)/$(bicepFile)
+    name: deployIaC
+
+- job: StopIfNoClusterInfo
+  displayName: Stop Pipeline if No ClusterInfo.yaml
+  dependsOn: parseClusterInfo
+  condition: and(eq(dependencies.parseClusterInfo.outputs['parseClusterInfo.clusterInfoExists'], 'false'), eq('${{ parameters.initialDeployment }}', 'false'))
+  pool:
+    vmImage: 'ubuntu-latest'
+  steps:
+  - script: |
+      echo "No ClusterInfo.yaml found. Stopping pipeline."
+    displayName: "No ClusterInfo.yaml Found"
+  name: stopPipeline
