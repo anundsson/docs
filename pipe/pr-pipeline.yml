@@ -1,0 +1,60 @@
+trigger:
+  branches:
+    exclude:
+      - '*'
+
+pr:
+  branches:
+    include:
+      - '*'
+
+stages:
+- stage: ValidateChanges
+  displayName: "Validate Changed Files in PR"
+  jobs:
+  - job: ValidateFileChanges
+    displayName: "Ensure Single File Change for bicepparam or bicep-modules"
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - script: |
+        echo "Fetching changed files..."
+        git fetch origin
+        CHANGED_FILES=$(git diff --name-only origin/main)
+
+        echo "Changed files:"
+        echo "$CHANGED_FILES"
+
+        # Filter changes for bicepparam and bicep-modules
+        BICEPPARAM_FILES=$(echo "$CHANGED_FILES" | grep -E '\.bicepparam$')
+        BICEP_MODULE_FILES=$(echo "$CHANGED_FILES" | grep -E '^bicep-modules/.*\.bicep$')
+
+        echo "Changed bicepparam files:"
+        echo "$BICEPPARAM_FILES"
+        echo "Changed bicep-modules files:"
+        echo "$BICEP_MODULE_FILES"
+
+        # Count changes
+        NUM_BICEPPARAM_FILES=$(echo "$BICEPPARAM_FILES" | wc -l)
+        NUM_BICEP_MODULE_FILES=$(echo "$BICEP_MODULE_FILES" | wc -l)
+
+        # Validate that at most one file in each category has been changed
+        if [ "$NUM_BICEPPARAM_FILES" -gt 1 ]; then
+          echo "Error: More than one .bicepparam file changed."
+          exit 1
+        fi
+
+        if [ "$NUM_BICEP_MODULE_FILES" -gt 1 ]; then
+          echo "Error: More than one file in bicep-modules/ directory changed."
+          exit 1
+        fi
+
+        echo "Validation successful: Single file change in bicepparam or bicep-modules detected."
+      displayName: "Validate Changed Files"
+
+- stage: CI
+  displayName: "Run CI Checks"
+  dependsOn: ValidateChanges
+  condition: succeeded()
+  jobs:
+  - template: templates/ci-template.yml

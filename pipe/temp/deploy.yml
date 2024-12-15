@@ -1,0 +1,27 @@
+parameters:
+  - name: serviceConnection
+    type: string
+  - name: resourceGroup
+    type: string
+  - name: bicepFile
+    type: string
+  - name: folderPath
+    type: string
+
+jobs:
+- job: DeployInfrastructure
+  displayName: "Deploy Infrastructure"
+  pool:
+    vmImage: 'ubuntu-latest'
+  steps:
+  - task: AzureCLI@2
+    displayName: "Deploy Bicep Templates"
+    inputs:
+      azureSubscription: ${{ parameters.serviceConnection }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        az deployment group create \
+          --resource-group ${{ parameters.resourceGroup }} \
+          --template-file ${{ parameters.folderPath }}/main.bicep \
+          --parameters @${{ parameters.folderPath }}/${{ parameters.bicepFile }}

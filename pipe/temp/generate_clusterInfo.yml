@@ -1,0 +1,25 @@
+parameters:
+  - name: clusterName
+    type: string
+  - name: resourceGroup
+    type: string
+  - name: filePath
+    type: string
+
+jobs:
+- job: GenerateClusterInfo
+  displayName: "Generate ClusterInfo.yaml"
+  pool:
+    vmImage: 'ubuntu-latest'
+  steps:
+  - script: |
+      mkdir -p $(dirname "${{ parameters.filePath }}")
+      cat << EOF > ${{ parameters.filePath }}
+      clusterName: ${{ parameters.clusterName }}
+      resourceGroup: ${{ parameters.resourceGroup }}
+EOF
+    displayName: "Write ClusterInfo.yaml"
+  - script: |
+      echo "Generated ClusterInfo.yaml:"
+      cat ${{ parameters.filePath }}
+    displayName: "Verify ClusterInfo.yaml"

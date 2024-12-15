@@ -1,0 +1,17 @@
+jobs:
+- job: RunCI
+  displayName: "Run CI Checks"
+  pool:
+    vmImage: 'ubuntu-latest'
+  steps:
+  - script: |
+      echo "Running yamllint on YAML files..."
+      yamllint . --strict
+    displayName: "Run yamllint"
+
+  - script: |
+      echo "Building Infrastructure as Code..."
+      # Replace this with the command for building IaC, such as Bicep
+      # Example for Bicep:
+      az bicep build --file bicep-modules/main.bicep
+    displayName: "Build Infrastructure as Code"
